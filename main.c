@@ -391,3 +391,34 @@ char* CalculateFileHash(const TCHAR* filePath) {
     fclose(file);
     return hashString;
 }
+
+void WriteLog(const TCHAR* directoryPath, const TCHAR* message) {
+    TCHAR logFilePath[MAX_PATH];
+    StringCchPrintf(logFilePath, MAX_PATH, _T("%s\\log.txt"), directoryPath);
+
+    FILE* logFile = _tfopen(logFilePath, _T("a"));
+    if (logFile == NULL) {
+        printLastError("Failed to open log file");
+        return;
+    }
+
+    _ftprintf(logFile, _T("%s\n"), message);
+    fclose(logFile);
+}
+
+void PrintSummary() {
+    _tprintf(_T("Total number of files: %d\n"), fileCount);
+    _tprintf(_T("Number of each file type:\n"));
+    for (int i = 0; i < fileTypeCountSize; i++) {
+        _tprintf(_T("- %s: %d\n"), fileTypeCounts[i].extension, fileTypeCounts[i].count);
+    }
+
+    _tprintf(_T("Duplicate file found & removed: %d\n"), duplicateFileCount);
+    for (int i = 0; i < deletedFileCount; i++) {
+        _tprintf(_T("- %s\n"), deletedFiles[i]);
+    }
+
+    _tprintf(_T("Path size before removing: %lu KB\n"), totalSizeBefore / 1024);
+    _tprintf(_T("Path size after removing: %lu KB\n"), totalSizeAfter / 1024);
+}
+

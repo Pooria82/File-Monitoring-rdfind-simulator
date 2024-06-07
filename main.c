@@ -293,3 +293,67 @@ unsigned __stdcall ProcessFile(void* data) {
     free(hash);
     return 0;
 }
+bool IsDuplicateFile(const char* hash, const TCHAR* filePath) {
+    for (int i = 0; i < fileCount; i++) {
+        if (strcmp(filesMap[i].hash, hash) == 0 && _tcscmp(filesMap[i].path, filePath) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void MarkFileAsProcessed(const char* hash, const TCHAR* filePath) {
+    struct FileInfo info;
+    StringCchCopy(info.path, MAX_PATH, filePath);
+    HANDLE hFile = CreateFile(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile != INVALID_HANDLE_VALUE) {
+        info.size = GetFileSize(hFile, NULL);
+        CloseHandle(hFile);
+    }
+    strcpy_s(info.hash, MD5_DIGEST_LENGTH * 2 + 1, hash);
+    filesMap[fileCount++] = info;
+}
+
+void IncrementFileHashCount(const char* hash) {
+    struct FileHashCount* current = fileHashCountHead;
+    while (current != NULL) {
+        if (strcmp(current->hash, hash) == 0) {
+            current->count++;
+            return;
+        }
+        current = current->next;
+    }
+    struct FileHashCount* newCount = (struct FileHashCount*)malloc(sizeof(struct FileHashCount));
+    strcpy_s(newCount->hash, MD5_DIGEST_LENGTH * 2 + 1, hash);
+    newCount->count = 1;
+    newCount->next = fileHashCountHead;
+    fileHashCountHead = newCount;
+}
+
+void DecrementFileHashCount(const char* hash) {
+    struct FileHashCount** current = &fileHashCountHead;
+    while (*current != NULL) {
+        if (strcmp((*current)->hash, hash) == 0) {
+            if (--((*current)->count) == 0) {
+                struct FileHashCount* temp = *current;
+                *current = (*current)->next;
+                free(temp);
+                return;
+            }
+        }
+        current = &((*current)->next);
+    }
+}
+
+void IncrementFileTypeCount(const TCHAR* extension) {
+    for (int i = 0; i < fileTypeCountSize; i++) {
+        if (_tcscmp(fileTypeCounts[i].extension, extension) == 0) {
+            fileTypeCounts[i].count++;
+            return;
+        }
+    }
+    StringCchCopy(fileTypeCounts[fileTypeCountSize].extension, BUF_SIZE, extension);
+    fileTypeCounts[fileTypeCountSize].count = 1;
+    fileTypeCountSize++;
+}
+

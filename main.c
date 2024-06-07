@@ -357,3 +357,37 @@ void IncrementFileTypeCount(const TCHAR* extension) {
     fileTypeCountSize++;
 }
 
+char* CalculateFileHash(const TCHAR* filePath) {
+    FILE* file = _tfopen(filePath, _T("rb"));
+    if (!file) {
+        printLastError("Failed to open file");
+        return NULL;
+    }
+
+    MD5_CTX md5;
+    MD5_Init(&md5);
+
+    unsigned char buffer[BUFSIZ];
+    size_t bytesRead = 0;
+    while ((bytesRead = fread(buffer, 1, BUFSIZ, file)) > 0) {
+        MD5_Update(&md5, buffer, bytesRead);
+    }
+
+    unsigned char hash[MD5_DIGEST_LENGTH];
+    MD5_Final(hash, &md5);
+
+    char* hashString = (char*)malloc(MD5_DIGEST_LENGTH * 2 + 1);
+    if (hashString == NULL) {
+        fclose(file);
+        _tprintf(_T("Memory allocation error.\n"));
+        return NULL;
+    }
+
+    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
+        sprintf_s(hashString + (i * 2), 3, "%02x", hash[i]);
+    }
+    hashString[MD5_DIGEST_LENGTH * 2] = '\0';
+
+    fclose(file);
+    return hashString;
+}

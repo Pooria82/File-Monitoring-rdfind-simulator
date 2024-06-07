@@ -74,6 +74,40 @@ void DestroyTaskQueue(struct TaskQueue* queue) {
     DeleteCriticalSection(&queue->cs);
 }
 
+int main() {
+    InitializeCriticalSection(&cs);
+    InitializeTaskQueue(&taskQueue);
+
+    HANDLE hThreads[MAX_THREADS];
+    for (int i = 0; i < MAX_THREADS; ++i) {
+        hThreads[i] = CreateThread(NULL, 0, WorkerThread, NULL, 0, NULL);
+    }
+
+    TCHAR directoryPath[BUF_SIZE];
+    _tprintf(_T("Enter the root directory path: "));
+    _fgetts(directoryPath, BUF_SIZE, stdin);
+
+    size_t len = _tcslen(directoryPath);
+    if (directoryPath[len - 1] == _T('\n')) {
+        directoryPath[len - 1] = _T('\0');
+    }
+
+    _tprintf(_T("Root directory path: %s\n"), directoryPath); 
+
+    EnqueueTask(directoryPath, true);
+
+    for (int i = 0; i < MAX_THREADS; ++i) {
+        WaitForSingleObject(hThreads[i], INFINITE);
+        CloseHandle(hThreads[i]);
+    }
+
+    DestroyTaskQueue(&taskQueue);
+    DeleteCriticalSection(&cs);
+
+    PrintSummary();
+    return 0;
+}
+
 void EnqueueTask(const TCHAR* path, bool isDirectory) {
     struct Task* newTask = (struct Task*)malloc(sizeof(struct Task));
     StringCchCopy(newTask->path, MAX_PATH, path);
@@ -91,7 +125,6 @@ void EnqueueTask(const TCHAR* path, bool isDirectory) {
     LeaveCriticalSection(&taskQueue.cs);
     WakeConditionVariable(&taskQueue.cv);
 }
-
 bool DequeueTask(struct Task* task) {
     EnterCriticalSection(&taskQueue.cs);
     while (taskQueue.head == NULL && !done) {
@@ -112,4 +145,151 @@ bool DequeueTask(struct Task* task) {
 
     free(temp);
     return true;
+}
+
+DWORD WINAPI WorkerThread(LPVOID lpParam) {
+    struct Task task;
+
+    while (DequeueTask(&task)) {
+        if (task.isDirectory) {
+            ProcessDirectory(task.path);
+        } else {
+            ProcessFile(task.path);
+        }
+    }
+
+    return 0;
+}
+
+void ProcessDirectory(const TCHAR* directoryPath) {
+    WIN32_FIND_DATA ffd;
+    HANDLE hFind;
+    TCHAR szDir[MAX_PATH];
+
+    StringCchCopy(szDir, MAX_PATH, directoryPath);
+    StringCchCat(szDir, MAX_PATH, _T("\\*"));
+
+    _tprintf(_T("Searching in directory: %s\n"), szDir); // Debugging line to ensure the search directory is correct
+
+    hFind = FindFirstFile(szDir, &ffd);
+    if (hFind == INVALID_HANDLE_VALUE) {
+        printLastError("FindFirstFile failed");
+        return;
+    }
+
+    do {
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (_tcscmp(ffd.cFileName, _T(".")) != 0 && _tcscmp(ffd.cFileName, _T("..")) != 0) {
+                TCHAR subdirectoryPath[MAX_PATH];
+                StringCchPrintf(subdirectoryPath, MAX_PATH, _T("%s\\%s"), directoryPath, ffd.cFileName);
+                _tprintf(_T("Found directory: %s\n"), subdirectoryPath); // Debugging line to ensure directories are found
+                EnqueueTask(subdirectoryPath, true);
+            }
+        } else {
+            TCHAR filePath[MAX_PATH];
+            StringCchPrintf(filePath, MAX_PATH, _T("%s\\%s"), directoryPath, ffd.cFileName);
+            _tprintf(_T("Found file: %s\n"), filePath); // Debugging line to ensure files are found
+            EnqueueTask(filePath, false);
+        }
+    } while (FindNextFile(hFind, &ffd) != 0);
+
+    DWORD dwError = GetLastError();
+    if (dwError != ERROR_NO_MORE_FILES) {
+        printLastError("FindNextFile failed");
+    }
+
+    FindClose(hFind);
+
+    // After finishing the directory processing, check if we are done
+    EnterCriticalSection(&taskQueue.cs);
+    if (taskQueue.head == NULL) {
+        done = true;
+        WakeAllConditionVariable(&taskQueue.cv);
+    }
+    LeaveCriticalSection(&taskQueue.cs);
+}
+
+unsigned __stdcall ProcessFile(void* data) {
+    TCHAR* filePath = (TCHAR*)data;
+    DWORD processId = GetCurrentProcessId();
+    DWORD threadId = GetCurrentThreadId();
+    _tprintf(_T("Processing file: %s\n"), filePath); // Debugging line to ensure file processing starts
+    char* hash = CalculateFileHash(filePath);
+
+    if (hash == NULL) {
+        _tprintf(_T("Hash calculation failed for file: %s\n"), filePath); // Debugging line for hash calculation failure
+        return 1; // If hash calculation fails, exit thread
+    }
+
+    _tprintf(_T("File: %s, MD5 hash: %s\n"), filePath, hash); // Display the file path and hash
+
+    TCHAR logMessage[MAX_PATH + 100];
+    StringCchPrintf(logMessage, sizeof(logMessage)/sizeof(logMessage[0]), _T("PID: %lu, TID: %lu, %s"), processId, threadId, filePath);
+
+    EnterCriticalSection(&cs);
+
+    // Check if the file is a duplicate and update the hash count
+    bool isDuplicate = IsDuplicateFile(hash, filePath);
+    TCHAR directoryPath[MAX_PATH];
+    StringCchCopy(directoryPath, MAX_PATH, filePath);
+
+    // Manually remove the file part to get the directory path
+    TCHAR* lastSlash = _tcsrchr(directoryPath, _T('\\'));
+    if (lastSlash != NULL) {
+        *lastSlash = _T('\0');
+    }
+
+    if (isDuplicate) {
+        IncrementFileHashCount(hash);
+        for (struct FileHashCount* current = fileHashCountHead; current != NULL; current = current->next) {
+            if (strcmp(current->hash, hash) == 0) {
+                if (current->count > 1) {
+                    _tprintf(_T("Deleting duplicate file: %s\n"), filePath); // Debugging line to indicate file deletion
+                    TCHAR deleteMessage[MAX_PATH + 150];
+                    StringCchPrintf(deleteMessage, sizeof(deleteMessage)/sizeof(deleteMessage[0]), _T("Directory: %s\nPID: %lu, TID: %lu, %s\n%s has duplicate"), directoryPath, processId, threadId, filePath, filePath);
+                    WriteLog(directoryPath, deleteMessage);
+
+                    HANDLE hFile = CreateFile(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+                    if (hFile != INVALID_HANDLE_VALUE) {
+                        DWORD fileSize = GetFileSize(hFile, NULL);
+                        totalSizeAfter -= fileSize; // Update total size after deletion
+                        CloseHandle(hFile);
+                    }
+
+                    if (!DeleteFile(filePath)) {
+                        printLastError("Failed to delete duplicate file");
+                    } else {
+                        StringCchCopy(deletedFiles[deletedFileCount++], MAX_PATH, filePath); // Keep track of deleted files
+                        duplicateFileCount++;
+                        DecrementFileHashCount(hash);
+                        StringCchPrintf(deleteMessage, sizeof(deleteMessage)/sizeof(deleteMessage[0]), _T("PID: %lu, TID: %lu, %s removed"), processId, threadId, filePath);
+                        WriteLog(directoryPath, deleteMessage);
+                    }
+                }
+                break;
+            }
+        }
+    } else {
+        IncrementFileHashCount(hash);
+        MarkFileAsProcessed(hash, filePath);
+
+        // Update file type count
+        TCHAR* ext = _tcsrchr(filePath, _T('.'));
+        if (ext != NULL) {
+            IncrementFileTypeCount(ext);
+        }
+
+        HANDLE hFile = CreateFile(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hFile != INVALID_HANDLE_VALUE) {
+            DWORD fileSize = GetFileSize(hFile, NULL);
+            totalSizeBefore += fileSize; // Update total size before deletion
+            totalSizeAfter += fileSize; // Initially, total size after deletion is the same
+            CloseHandle(hFile);
+        }
+    }
+
+    LeaveCriticalSection(&cs);
+
+    free(hash);
+    return 0;
 }

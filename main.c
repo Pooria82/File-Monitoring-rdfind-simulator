@@ -24,6 +24,12 @@ struct Task {
     struct Task* next;
 };
 
+struct TaskQueue {
+    struct Task* head;
+    struct Task* tail;
+    CRITICAL_SECTION cs;
+    CONDITION_VARIABLE cv;
+} taskQueue;
 
 struct FileHashCount {
     char hash[MD5_DIGEST_LENGTH * 2 + 1];
@@ -68,6 +74,22 @@ void InitializeTaskQueue(struct TaskQueue* queue) {
     queue->tail = NULL;
     InitializeCriticalSection(&queue->cs);
     InitializeConditionVariable(&queue->cv);
+}
+
+void printLastError(const char* msg) {
+    LPVOID lpMsgBuf;
+    DWORD dw = GetLastError();
+
+    FormatMessage(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            NULL,
+            dw,
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            (LPTSTR) &lpMsgBuf,
+            0, NULL );
+
+    _tprintf(_T("%s: %s\n"), msg, (TCHAR*)lpMsgBuf);
+    LocalFree(lpMsgBuf);
 }
 
 void DestroyTaskQueue(struct TaskQueue* queue) {

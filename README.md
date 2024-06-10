@@ -226,9 +226,7 @@
                   if (current->count > 1) {
                       _tprintf(_T("Deleting duplicate file: %s\n"), filePath);
                       TCHAR deleteMessage[MAX_PATH + 150];
-                      StringCchPrintf(deleteMessage, sizeof(deleteMessage
-
-)/sizeof(deleteMessage[0]), _T("Directory: %s\nPID: %lu, TID: %lu, %s\n%s has duplicate"), directoryPath, processId, threadId, filePath, filePath);
+                      StringCchPrintf(deleteMessage, sizeof(deleteMessage)/sizeof(deleteMessage[0]), _T("Directory: %s\nPID: %lu, TID: %lu, %s\n%s has duplicate"), directoryPath, processId, threadId, filePath, filePath);
                       WriteLog(directoryPath, deleteMessage);
 
                       HANDLE hFile = CreateFile(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);

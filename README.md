@@ -1,4 +1,4 @@
-Read this in other languages: <a href="/Pooria82/File-Monitoring-rdfind-simulator/blob/main/README.md">English</a>,<a href="/Pooria82/File-Monitoring-rdfind-simulator/blob/main/README.fa.md">Persian</a>
+Read this in other languages: <a href="https://github.com/Pooria82/File-Monitoring-rdfind-simulator/blob/main/README.md">English</a> , <a href="https://github.com/Pooria82/File-Monitoring-rdfind-simulator/blob/main/README.fa.md">Persian</a>
 
 ### 1. Libraries
 

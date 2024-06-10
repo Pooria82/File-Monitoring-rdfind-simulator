@@ -1,3 +1,5 @@
+Read this in other languages: <a href="https://github.com/Pooria82/File-Monitoring-rdfind-simulator/blob/main/README.md">English</a> , <a href="https://github.com/Pooria82/File-Monitoring-rdfind-simulator/blob/main/README.fa.md">Persian</a>
+
 #### 1. کتابخانه‌ها
 
 - **windows.h**: شامل توابع و ساختارهای مورد نیاز برای انجام عملیات‌های سیستمی ویندوز مانند مدیریت فایل‌ها، دایرکتوری‌ها، و رشته‌ها.
